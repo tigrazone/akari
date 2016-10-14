@@ -1,7 +1,7 @@
 ﻿#include <iostream>
 #include <omp.h>
 
-#include "bmpexporter.h"
+//#include "bmpexporter.h"
 
 #include "scene.h"
 #include "setting.h"
@@ -12,8 +12,139 @@
 #include "triangle_mesh_vvv.h"
 #include "render.h"
 
-#include <Windows.h>
-#include <MMSystem.h>
+#include <time.h>
+
+#pragma comment(lib, "winmm.lib")
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+//#include "bmpexporter.h"
+
+#pragma pack(push,2)
+
+typedef struct tagBITMAPFILEHEADER {
+  unsigned short bfType;
+  unsigned long  bfSize;
+  unsigned short bfReserved1;
+  unsigned short bfReserved2;
+  unsigned long  bfOffBits;
+} BITMAPFILEHEADER;
+
+typedef struct tagBITMAPINFOHEADER{
+	unsigned long  biSize;
+	long           biWidth;
+	long           biHeight;
+	unsigned short biPlanes;
+	unsigned short biBitCount;
+	unsigned long  biCompression;
+	unsigned long  biSizeImage;
+	long           biXPixPerMeter;
+	long           biYPixPerMeter;
+	unsigned long  biClrUsed;
+	unsigned long  biClrImporant;
+} BITMAPINFOHEADER;
+
+#pragma pack(pop)
+
+int exportToBmp(
+	const char* fileName, 
+	unsigned char* pixel, 
+	unsigned int width,
+	unsigned int height )
+{
+	//
+	int success = 0;
+	unsigned int x = 0;
+	unsigned int y = 0;
+	FILE* file = 0;
+	BITMAPFILEHEADER* header = 0;
+	BITMAPINFOHEADER* infoHeader = 0;
+	unsigned int scanLineLengthInBytes = 0;
+	int totalFileLength = 0;
+	unsigned char* bmpMemoryStart = 0;
+	unsigned char* bmpMemoryCursor = 0;
+	//
+	// スキャンライン長計算
+	scanLineLengthInBytes = width*3;
+	// ファイル全体の長さを計算
+	totalFileLength = sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER)+scanLineLengthInBytes*height;
+	// メモリを確保
+	bmpMemoryStart = (unsigned char*)malloc(totalFileLength);
+	
+	if( !bmpMemoryStart )
+	{ goto EXIT; }
+
+	bmpMemoryCursor = bmpMemoryStart;
+	// BITMAPFILEHEADERを作成
+	header = (BITMAPFILEHEADER*)bmpMemoryCursor; //
+	header->bfType = 'B' | ('M' << 8); // ファイルタイプ
+	header->bfSize = totalFileLength;// ファイルサイズ (byte)
+	header->bfReserved1 = 0; // 予約領域
+	header->bfReserved2 = 0; // 予約領域
+	header->bfOffBits = sizeof(BITMAPFILEHEADER)+sizeof(BITMAPINFOHEADER); // ファイル先頭から画像データまでのオフセット (byte)
+	bmpMemoryCursor += sizeof(BITMAPFILEHEADER);
+	// BITMAPINFOHEADERを作成
+	infoHeader = (BITMAPINFOHEADER*)bmpMemoryCursor;
+	infoHeader->biSize = sizeof(BITMAPINFOHEADER); // 情報ヘッダのサイズ
+	infoHeader->biWidth = width; // 画像の幅 (ピクセル)
+	infoHeader->biHeight = height; // 画像の高さ (ピクセル)
+	infoHeader->biPlanes = 1; // プレーン数
+	infoHeader->biBitCount = 24; // 1 画素あたりのデータサイズ (bit)
+	infoHeader->biCompression = 0; // 圧縮形式(無圧縮)
+	infoHeader->biSizeImage = width*height*3; // 画像データ部のサイズ (byte)
+	infoHeader->biXPixPerMeter = 3780; // 横方向解像度 (1mあたりの画素数)
+	infoHeader->biYPixPerMeter = 3780; // 縦方向解像度 (1mあたりの画素数)
+	infoHeader->biClrUsed = 0; // 格納されているパレット数 (使用色数)	
+	infoHeader->biClrImporant = 0; // 重要なパレットのインデックス
+	bmpMemoryCursor += sizeof(BITMAPINFOHEADER);
+	// 全てのデータを書き込む
+	for(y=0;y<height;++y)
+	{
+		for(x=0;x<width;++x)
+		{
+			const unsigned int srcBase = (x+(height-y-1)*width)*3;
+			const unsigned int dstBase = x*3;
+			bmpMemoryCursor[dstBase+0] = pixel[srcBase+0];
+			bmpMemoryCursor[dstBase+1] = pixel[srcBase+1];
+			bmpMemoryCursor[dstBase+2] = pixel[srcBase+2];
+		}
+		bmpMemoryCursor += scanLineLengthInBytes;
+	}
+	// ファイルに書き込む
+	
+	#if defined(__GNUC__)
+	file=fopen(fileName,"wb");
+#elif defined(__MSVC__)
+	fopen_s(&file,fileName,"wb");
+#else
+#error Unsupported compiler!
+#endif
+
+	
+	if(!file)
+	{ goto EXIT; }
+	if(fwrite(bmpMemoryStart,totalFileLength,1,file)!=1)
+	{ goto EXIT; }
+	if(fclose(file)==EOF)
+	{ goto EXIT; }
+	// 最後まで到達したので成功
+	success = 1;
+EXIT:
+	if(bmpMemoryStart)
+	{
+		free(bmpMemoryStart);
+	}
+	if(file)
+	{
+		fclose(file);
+	}
+	return success;
+}
+
+
+int width0, height0;
 
 inline float luminance(const Color &color) {
 	return 0.298912f * color.x_ + 0.586611f * color.y_ + 0.114478f * color.z_;
@@ -46,6 +177,85 @@ void to_ldr(HDRImage *hdr_image, const float fstop) {
 			*hdr_image->image_ptr(ix, iy) = col;
 		}
 	}
+}
+
+//tigra
+void flo2hdr(const char *fn,const std::vector<float> mColor)
+{	
+	std::ofstream hdr(fn, std::ios::binary);
+
+	const static int mResY = height0;
+	const static int mResX = width0;
+		
+        hdr << "#?RADIANCE" << '\n';
+        hdr << "# SmallVCM" << '\n';
+        hdr << "FORMAT=32-bit_rle_rgbe" << '\n' << '\n';
+        hdr << "-Y " << mResY << " +X " << mResX << '\n';
+
+		for (int y = mResY-1; y >=0; y--)
+        {
+            for(int x=0; x<mResX; x++)
+            {
+                typedef unsigned char byte;
+                byte rgbe[4] = {0,0,0,0};
+
+                const Vec rgbF = Vec(mColor[x + y*mResX],mColor[x + y*mResX],mColor[x + y*mResX]);
+                float v = std::max(rgbF.x_, std::max(rgbF.y_, rgbF.z_));
+
+                //if(v >= 1e-32f)
+                {
+                    int e;
+                    //v = float(frexp(v, &e) * 256.f *rcp(v));
+                    v = float(frexp(v, &e) * 256.f / v);
+                    rgbe[0] = byte(rgbF.x_ * v);
+                    rgbe[1] = byte(rgbF.y_ * v);
+                    rgbe[2] = byte(rgbF.z_ * v);
+                    rgbe[3] = byte(e + 128);
+                }
+
+                hdr.write((char*)&rgbe[0], 4);
+            }
+        }
+	
+}
+
+void int2hdr(const char *fn, const std::vector<int> mColor)
+{
+	std::ofstream hdr(fn, std::ios::binary);
+
+	const static int mResY = height0;
+	const static int mResX = width0;
+
+	hdr << "#?RADIANCE" << '\n';
+	hdr << "# SmallVCM" << '\n';
+	hdr << "FORMAT=32-bit_rle_rgbe" << '\n' << '\n';
+	hdr << "-Y " << mResY << " +X " << mResX << '\n';
+
+	for (int y = mResY - 1; y >= 0; y--)
+	{
+		for (int x = 0; x<mResX; x++)
+		{
+			typedef unsigned char byte;
+			byte rgbe[4] = { 0, 0, 0, 0 };
+
+			const Vec rgbF = Vec(mColor[x + y*mResX], mColor[x + y*mResX], mColor[x + y*mResX]);
+			float v = std::max(rgbF.x_, std::max(rgbF.y_, rgbF.z_));
+
+			//if (v >= 1e-32f)
+			{
+				int e;
+				//v = float(frexp(v, &e) * 256.f *rcp(v));
+				v = float(frexp(v, &e) * 256.f / v);
+				rgbe[0] = byte(rgbF.x_ * v);
+				rgbe[1] = byte(rgbF.y_ * v);
+				rgbe[2] = byte(rgbF.z_ * v);
+				rgbe[3] = byte(e + 128);
+			}
+
+			hdr.write((char*)&rgbe[0], 4);
+		}
+	}
+
 }
 
 
@@ -122,7 +332,12 @@ void blur(std::vector<T> &arr, const std::vector<float> &depth_arr, const int wi
 }
 
 int main() {
-	DWORD beginTime = timeGetTime();
+	clock_t beginTime = clock(); 
+	clock_t beginTime0 = clock();
+
+	clock_t endTime1;
+	float now1;
+
 	Setting setting("setting.txt");
 	Render render(&setting);
 
@@ -197,13 +412,18 @@ int main() {
 	HDRImage depth_hdr(width, height);
 	HDRImage result_hdr(width, height);
 	HDRImage tmp_hdr(width, height);
+	
+	width0	= width;
+	height0	= height;
 
 	int count = 0;
 
-	timeBeginPeriod(1);
+	//timeBeginPeriod(1);
 	{
 		
 		std::vector <int> sample_map(width * height);
+		std::vector <float> sample_mapf(width * height);
+		
 		for (int i = 0; i < sample_map.size(); ++i) {
 			sample_map[i] = sample_per_pixel_per_iteration;
 		}
@@ -213,9 +433,15 @@ int main() {
 		std::vector<float> luminance2_map(width * height);
 		std::vector<float> variance_map(width * height);
 		std::vector<float> importance_map(width * height);
+		std::vector<float> importance_map1(width * height);
 		std::vector<float> depth_arr(width * height);
 
 		std::vector<unsigned char> bmp_arr(width * height * 3);
+
+		std::cout << "Image size " << width << "x" << height << std::endl;
+		std::cout << "direct_light_samples=" << direct_light_samples << std::endl;
+		std::cout << "indirect_light_samples=" << indirect_light_samples << std::endl;
+		std::cout << "sample_per_pixel_per_iteration=" << sample_per_pixel_per_iteration << std::endl;
 
 		Random grnd(0);
 		
@@ -282,8 +508,11 @@ int main() {
 						}
 						
 						// 間接光の影響計算
+						
+						const float ils1 = 1.0 / (float)indirect_light_samples;
+						
 						for (int v = 0; v < indirect_light_samples; ++ v) {
-							const Color indirect_light = render.radiance_indirect_light_env(ray, &rnd, Intersection(), NULL, 0) / (float)indirect_light_samples;
+							const Color indirect_light = render.radiance_indirect_light_env(ray, &rnd, Intersection(), NULL, 0) * ils1;
 							if (valid(indirect_light))
 								accumulated_radiance = accumulated_radiance + indirect_light;
 						}
@@ -298,12 +527,13 @@ int main() {
 				}
 
 				// 経過時間チェック
-				DWORD endTime = timeGetTime();
-				const float now = (endTime - beginTime) / 1000.0f;
+				clock_t endTime = clock();
+				const float now = (float)(endTime - beginTime) / (float)CLOCKS_PER_SEC;
 
-				if (now >= output_interval) {
+				if (now >= output_interval) 
+				{
 					std::cout << std::endl;
-					beginTime = timeGetTime();
+					beginTime = clock();
 
 					// 出力
 					for (int y = 0; y < height; y ++) {
@@ -313,13 +543,18 @@ int main() {
 						}
 					}
 
+					
 					// 最終結果をぼかす
-					std::cout << "blur rendered image" << std::endl;
+					//std::cout << "blur rendered image" << std::endl;
 				#pragma omp parallel for schedule(dynamic, 1)
 					for (int y = 0; y < height; y ++) {
 						for (int x = 0; x < width; x ++) {
 							const float depth = depth_arr[y * width + x];
-							if (fabs(depth - focal_distance) >= blur_depth_threashold) {
+							
+							//tigra: off blur
+							//if (fabs(depth - focal_distance) >= blur_depth_threashold) 
+							if (0)
+							{
 								float radius = (fabs(depth - focal_distance) / (blur_depth_threashold * 2.0f) - total_samples[y * width + x] / blur_total_samples_coeff);
 								if (radius > blur_max_radius)
 									radius = blur_max_radius;
@@ -368,10 +603,16 @@ int main() {
 					vignetting(&result_hdr, height * vignetting_value);
 			
 					char str[256];
-					/*
-					sprintf(str, "result_%03d.hdr", count);
+					
+					sprintf(str, "result_%03d__%03d.hdr", iteration, count);
 					result_hdr.save(str);
-					*/
+					
+					sprintf(str, "tmp_hdr_%03d__%03d.hdr", iteration, count);
+					tmp_hdr.save(str);
+					
+					sprintf(str, "hdr_%03d__%03d.hdr", iteration, count);
+					hdr.save(str);
+					
 
 					// bmpに出力
 					for (int iy = 0; iy < height; ++iy) {
@@ -386,10 +627,16 @@ int main() {
 //							printf("%f %d\n", result_hdr.image_ptr(ix, height - iy - 1)->x_, r);
 						}
 					}
-					sprintf(str, "%03d.bmp", count);
+					sprintf(str, "%03d__%03d.bmp", iteration, count);
 					exportToBmp(str, &bmp_arr[0], width, height);
 
 					std::cout << "output: " << str << std::endl;
+
+
+					endTime1 = clock();
+					now1 = (float)(endTime1 - beginTime0) / (float)CLOCKS_PER_SEC;
+
+					printf("%.2fsec.\n", now1);
 
 					++count;
 				}
@@ -402,12 +649,27 @@ int main() {
 					depth_arr[y * width + x] =  (*depth_hdr.image_ptr(x, y)).x_ / total_samples[y * width + x];
 				}
 			}
+			
+			
+			for (int y = 0; y < height; y ++) {
+				for (int x = 0; x < width; x ++) {
+					depth_arr[y * width + x] =  depth_arr[y * width + x] * 100.0;
+				}
+			}
+					
+			char str[256];
+
+			sprintf(str, "depth_%03d__%03d.hdr", iteration, count);
+					//depth_hdr.save(str);
+					flo2hdr(str, depth_arr);
 
 			// 次のサンプルマップを計算
 			std::cout << "calculate variance_map" << std::endl;
 			for (int y = 0; y < height; y ++) {
 				for (int x = 0; x < width; x ++) {
-					const float lumi = luminance_map[y * width + x] / total_samples[y * width + x];
+					const float tts1 = 1.0f / total_samples[y * width + x];
+
+					const float lumi = luminance_map[y * width + x] * tts1;
 					float lumi0 = lumi;
 					float lumi1 = lumi;
 					if (x + 1 < width)
@@ -418,7 +680,7 @@ int main() {
 					const float dfdx = (lumi - lumi0);
 					const float dfdy = (lumi - lumi1);
 
-					variance_map[y * width + x] = sqrt(dfdx * dfdx + dfdy * dfdy) + 1.0f / total_samples[y * width + x];
+					variance_map[y * width + x] = sqrt(dfdx * dfdx + dfdy * dfdy) + tts1;
 				}
 			}
 
@@ -454,17 +716,27 @@ int main() {
 			for (int i = 0; i < importance_map.size(); ++i)
 				total += importance_map[i];
 
+			const float ttl1 = 1.0f / total;
+
 			for (int i = 0; i < importance_map.size(); ++i) {
-				importance_map[i] /= total;
+				importance_map1[i] = importance_map[i];
+				importance_map[i] *= ttl1;
 			}
 			
 			std::cout << "calculate sample_map" << std::endl;
 			// 各ピクセルのサンプル数を適当に決定
 			const int geta = sample_per_pixel_per_iteration - 1;
-			const int sample_num = sample_per_pixel_per_iteration * width * height - (geta * width * height);
+			//const int sample_num = sample_per_pixel_per_iteration * width * height - (geta * width * height);
+			const int sample_num = width * height;
+			
 
+			long ttl_s = 0;
+
+
+			int samples_min, samples_max;
+			
 			for (int i = 0; i < sample_map.size(); ++i) {
-				sample_map[i] = geta;
+				sample_map[i] = geta+1;
 
 				const int now = (int)(sample_num * importance_map[i]);
 				const float nowf = ((float)sample_num * importance_map[i] - now);
@@ -473,11 +745,48 @@ int main() {
 				if (grnd.next01() < nowf) {
 					sample_map[i] ++;
 				}
+				
+				ttl_s += sample_map[i];
+				
+				if(i)
+				{
+					if(sample_map[i]>samples_max) samples_max=sample_map[i];
+					if(sample_map[i]<samples_min) samples_min=sample_map[i];
+				}
+				else
+				{
+					samples_max=sample_map[i];
+					samples_min=sample_map[i];
+				}
 			}
+
+			for (int i = 0; i < sample_map.size(); ++i)
+			{
+				sample_mapf[i] = (float)100.0f*sample_map[i]/samples_max;
+			}
+			
+			printf("samples_min=%d samples_max=%d\n--------------------\n",samples_min,samples_max);
+
+			//tigra: здесь можно выводить variance_map, importance_map, luminance_map - float,  sample_map - int
+
+			//char str[256];
+
+			sprintf(str, "variance_map_%03d__%03d.hdr", iteration, count);
+			flo2hdr(str, variance_map);
+
+			sprintf(str, "importance_map_%03d__%03d.hdr", iteration, count);
+			flo2hdr(str, importance_map1);
+
+			sprintf(str, "luminance_map_%03d__%03d.hdr", iteration, count);
+			flo2hdr(str, luminance_map);
+
+			sprintf(str, "sample_map_%03d__%03d.hdr", iteration, count);
+			flo2hdr(str, sample_mapf);
+			
 		}
 	}
 
-	timeEndPeriod(1);
+	//timeEndPeriod(1);
 
 	return 0;
 }

@@ -9,6 +9,8 @@
 #include "qbvh.h"
 #include "vec.h"
 
+#include <time.h>
+
 struct VVVVertex {
 	Vec position_;
 	Vec color_;
@@ -40,6 +42,7 @@ public:
 	}
 };
 
+
 class VVVTriangleMesh {	
 private:
 	std::vector<VVVVertex> vertex;
@@ -59,7 +62,21 @@ public:
 			std::cout << "Triangle Mesh Error: " << filename << std::endl;
 			return;
 		}
-
+		
+		/*
+		vvv format:
+		2	0x76767676	signature
+		2				vsize
+		vsize*9 float	position, color, nornal
+		2				fsize
+		fsize*3 int		3 indexes
+		*/
+		
+		/*
+		bool exportOBJ = true;
+		FILE *objf;
+		*/
+		
 		unsigned int header = 0;
 
 		ifs.read((char *)&header, sizeof(unsigned int));
@@ -68,6 +85,22 @@ public:
 
 		unsigned int vsize = 0;
 		ifs.read((char *)&vsize, sizeof(unsigned int));
+
+		/*
+		if (exportOBJ)
+		{
+			size_t position = filename.find(".");
+			std::string extractName = (std::string::npos == position) ? filename : filename.substr(0, position);
+			//std::cout << "extractName=" << extractName.c_str() << std::endl;
+
+			std::string fn_obj = extractName + ".obj";
+
+			objf = fopen(fn_obj.c_str(), "wt");
+
+			fprintf(objf, "# exported from akari vvv loader\n");
+		}
+		*/
+		
 
 		for (unsigned int i = 0; i < vsize; ++i) {
 			float f[9];
@@ -89,6 +122,14 @@ public:
 			v.normal_.y_ = f[7];
 			v.normal_.z_ = f[8];
 
+			/*
+			if (exportOBJ)
+			{
+				fprintf(objf, "v %f %f %f\n", v.position_.x_, v.position_.y_, v.position_.z_);
+				fprintf(objf, "vn %f %f %f\n", v.normal_.x_, v.normal_.y_, v.normal_.z_);
+			}
+			*/
+
 			vertex.push_back(v);
 			
 			//std::cout << f[0] << " " << f[1] << " " << f[2] << std::endl;
@@ -105,9 +146,24 @@ public:
 			f.v1 = v[1];
 			f.v2 = v[2];
 
+			/*
+			if (exportOBJ)
+			{
+				fprintf(objf, "f v%d//vn%d v%d//vn%d v%d//vn%d\n", f.v0+1, f.v0+1, f.v1+1, f.v1+1, f.v2+1, f.v2+1);
+			}
+			*/
 
 			face.push_back(f);
 		}
+
+		/*
+		
+		if (exportOBJ)
+		{
+			fclose(objf);
+		}
+		*/
+		
 
 		std::cout << "=== QBVH ===" << std::endl;
 		std::cout << "vertex: " << vertex.size() << std::endl;
@@ -126,8 +182,16 @@ public:
 		
 		
 		std::cout << "create BVH" << std::endl;
+
+		clock_t t0 = clock();
+
 		bvh.CreateBVHFromTriangle2s(triangles);
-		std::cout << "done BVH" << std::endl << std::endl;
+
+		clock_t t1 = clock();
+		
+		std::cout << "done BVH ";
+
+		printf("%.2fs\n\n", (float)(t1 - t0) / CLOCKS_PER_SEC);
 	}
 
 	virtual ~VVVTriangleMesh() {

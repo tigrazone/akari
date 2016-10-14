@@ -19,8 +19,13 @@ private:
 public:
 
 	Render(Setting *setting) : setting_(setting) {
+		//const std::string sss = setting->string_value("ibl", "ibl.hdr");
+
+		//printf("%s\n", sss.c_str());
+		///exit(0);
 		scene_ = new Scene(setting->string_value("scene", "scene.txt"));
-		ibl_   = new IBL(setting->string_value("ibl", "ibl.hdr"), true); 
+
+		ibl_ = new IBL(setting->string_value("ibl", "ibl.hdr"), true);
 		depth_max_ = setting->int_value("depth_max_", 32);
 	}
 	
@@ -44,7 +49,10 @@ public:
 		}
 
 		const Hitpoint &hitpoint = intersection.hitpoint_;
-		const Vec orienting_normal = dot(hitpoint.normal_ , ray.dir_) < 0.0 ? hitpoint.normal_: (-1.0 * hitpoint.normal_); // 交差位置の法線（物体からのレイの入出を考慮）
+
+		const float hpn_rdir = dot(hitpoint.normal_, ray.dir_);
+
+		const Vec orienting_normal = hpn_rdir < 0.0 ? hitpoint.normal_ : (-1.0 * hitpoint.normal_); // 交差位置の法線（物体からのレイの入出を考慮）
 
 		Color incoming_radiance;
 		Color weight;
@@ -55,15 +63,34 @@ public:
 			{
 				Vec w, u, v;
 				w = orienting_normal;
+				
+				/*
 				if (fabs(w.x_) > kEPS) // ベクトルwと直交するベクトルを作る。w.xが0に近い場合とそうでない場合とで使うベクトルを変える。
 					u = normalize(cross(Vec(0.0, 1.0, 0.0), w));
 				else
 					u = normalize(cross(Vec(1.0, 0.0, 0.0), w));
 				v = cross(w, u);
+				*/
+				
+				if (fabs(w.x_) > kEPS)
+				{
+					const float nx = 1.0f / sqrt(w.z_*w.z_ + w.x_*w.x_);
+					u = Vec(w.z_*nx, 0.0, w.x_*nx);
+					v = Vec(w.y_*u.z_, w.z_*u.x_ - w.x_*u.z_,-w.y_*u.x_);
+				}
+				else
+				{
+					const float nx = 1.0f / sqrt(w.z_*w.z_ + w.y_*w.y_);
+					u = Vec(0.0, -w.z_*nx, w.y_*nx);
+					v = Vec(w.y_*u.z_ - w.z_*u.y_, -w.x_*u.z_,-w.y_*u.x_);
+				}
+				
 				// コサイン項を使った重点的サンプリング
-				const float r1 = 2 * kPI * rnd->next01();
+				const float r1 = kPI2 * rnd->next01();
 				const float r2 = rnd->next01(), r2s = sqrt(r2);
-				Vec dir = normalize((
+				Vec dir = 
+					//normalize
+					((
 					u * cos(r1) * r2s +
 					v * sin(r1) * r2s +
 					w * sqrt(1.0f - r2)));
@@ -74,7 +101,7 @@ public:
 			break;
 		case MT_Mirror:
 			{
-				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * 2.0 * dot(hitpoint.normal_, ray.dir_));
+						  const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * (hpn_rdir + hpn_rdir));
 				incoming_radiance = radiance_indirect_light_env(reflection_ray, rnd, intersection, around_material, depth + 1, inside);
 				weight = hitpoint.color_;
 			}
@@ -82,21 +109,41 @@ public:
 		case MT_Glossy:
 			{
 				MaterialGlossy *material = (MaterialGlossy*)intersection.objectMaterial;
-				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * 2.0 * dot(hitpoint.normal_, ray.dir_));
+				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * (hpn_rdir + hpn_rdir));
 
 				Vec w, u, v;
 				Vec dir;
 				w = reflection_ray.dir_;
+				//radiance_indirect_light_env
+				/*
 				if (fabs(w.x_) > kEPS)
 					u = normalize(cross(Vec(0.0, 1.0, 0.0), w));
 				else
 					u = normalize(cross(Vec(1.0, 0.0, 0.0), w));
+				
 				v = cross(w, u);
+				*/
+				
+				if (fabs(w.x_) > kEPS)
+				{
+					const float nx = 1.0f / sqrt(w.z_*w.z_ + w.x_*w.x_);
+					u = Vec(w.z_*nx, 0.0, w.x_*nx);
+					v = Vec(w.y_*u.z_, w.z_*u.x_ - w.x_*u.z_,-w.y_*u.x_);
+				}
+				else
+				{
+					const float nx = 1.0f / sqrt(w.z_*w.z_ + w.y_*w.y_);
+					u = Vec(0.0, -w.z_*nx, w.y_*nx);
+					v = Vec(w.y_*u.z_ - w.z_*u.y_, -w.x_*u.z_,-w.y_*u.x_);
+				}
+				
 				do {
-					const float r1 = 2 * kPI * rnd->next01();
-					const float r2 = -material->lobe_ * 2.0f * rnd->next01() + 1.0f;
+					const float r1 = kPI2 * rnd->next01();
+					const float r2 = (-material->lobe_ - material->lobe_ ) * rnd->next01() + 1.0f;
 					const float r2s = sqrt(1.0 - r2 * r2);
-					dir = normalize((
+					dir = 
+						//normalize
+						((
 						u * cos(r1) * r2s +
 						v * sin(r1) * r2s +
 						w * r2));
@@ -113,7 +160,7 @@ public:
 			{
 				MaterialGlass *material = (MaterialGlass*)intersection.objectMaterial;
 
-				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * 2.0 * dot(hitpoint.normal_, ray.dir_));
+				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * (hpn_rdir + hpn_rdir));
 				const bool into = dot(hitpoint.normal_, orienting_normal) > 0.0; // レイがオブジェクトから出るのか、入るのか
 
 				// Snellの法則
@@ -130,16 +177,23 @@ public:
 				}
 				// 屈折の方向
 				const Ray refraction_ray = Ray(hitpoint.position_,
-					normalize(ray.dir_ * nnt - hitpoint.normal_ * (into ? 1.0f : -1.0f) * (ddn * nnt + sqrt(cos2t))));
+					//normalize
+					(ray.dir_ * nnt - hitpoint.normal_ * (into ? 1.0f : -1.0f) * (ddn * nnt + sqrt(cos2t))));
 
 				// SchlickによるFresnelの反射係数の近似を使う
 				const float a = nt - nc, b = nt + nc;
 				const float R0 = (a * a) / (b * b);
 
-				const float c = 1.0f - (into ? -ddn : dot(refraction_ray.dir_, -1.0f * orienting_normal));
-				const float Re = R0 + (1.0f - R0) * pow(c, 5.0f); // 反射方向の光が反射してray.dirの方向に運ぶ割合。同時に屈折方向の光が反射する方向に運ぶ割合。
-				const float nnt2 = pow(into ? nc / nt : nt / nc, 2.0f); // レイの運ぶ放射輝度は屈折率の異なる物体間を移動するとき、屈折率の比の二乗の分だけ変化する。
-				const float Tr = (1.0f - Re) * nnt2; // 屈折方向の光が屈折してray.dirの方向に運ぶ割合
+				const float c = 1.0f - (into ? -ddn : -dot(refraction_ray.dir_, orienting_normal));
+				const float cc = c*c;
+
+				//const float Re = R0 + (1.0f - R0) * pow(c, 5.0f); // 反射方向の光が反射してray.dirの方向に運ぶ割合。同時に屈折方向の光が反射する方向に運ぶ割合。
+				const float Re = R0 + (1.0f - R0) * cc*cc*c; // 反射方向の光が反射してray.dirの方向に運ぶ割合。同時に屈折方向の光が反射する方向に運ぶ割合。
+				//const float nnt2 = pow(into ? nc / nt : nt / nc, 2.0f); // レイの運ぶ放射輝度は屈折率の異なる物体間を移動するとき、屈折率の比の二乗の分だけ変化する。
+				//const float Tr = (1.0f - Re) * nnt2; // 屈折方向の光が屈折してray.dirの方向に運ぶ割合
+
+				//const float nnt2 = nnt*nnt; // レイの運ぶ放射輝度は屈折率の異なる物体間を移動するとき、屈折率の比の二乗の分だけ変化する。
+				const float Tr = (1.0f - Re) * nnt * nnt; // 屈折方向の光が屈折してray.dirの方向に運ぶ割合
 
 				// 一定以上レイを追跡したら屈折と反射のどちらか一方を追跡する。（さもないと指数的にレイが増える）
 				// ロシアンルーレットで決定する。
@@ -179,7 +233,10 @@ public:
 		}
 	
 		const Hitpoint &hitpoint = intersection->hitpoint_;
-		const Vec orienting_normal = dot(hitpoint.normal_ , ray.dir_) < 0.0 ? hitpoint.normal_: (-1.0 * hitpoint.normal_); // 交差位置の法線（物体からのレイの入出を考慮）
+
+		const float hpn_rdir = dot(hitpoint.normal_, ray.dir_);
+
+		const Vec orienting_normal = hpn_rdir < 0.0 ? hitpoint.normal_ : (-1.0 * hitpoint.normal_); // 交差位置の法線（物体からのレイの入出を考慮）
 	
 		Color incoming_radiance;
 		Color weight;
@@ -194,16 +251,23 @@ public:
 				sample.reserve(usamples * vsamples);
 
 				ibl_->importance_sampling_unsafe_fast(usamples, vsamples, orienting_normal, sample, rnd);
+				
+				const float sample_sz_1 = 1.0f / (float)sample.size();
+				
 				for (int i = 0; i < sample.size(); ++i) {
 					Intersection next_intersection;
 					if (!scene_->intersect(Ray(hitpoint.position_, sample[i].dir_), *intersection, &next_intersection)) {
-						const float w = (1.0f / sample[i].weight_) * dot(sample[i].dir_, orienting_normal) / kPI;
+
+						// a * b * c = ac * b = (1/sw)/kPI = (1/sw)*(1/kPI) = 1 / (sw*kPI)
+						//const float w = (1.0f / sample[i].weight_) * dot(sample[i].dir_, orienting_normal) / kPI;
+						
+						const float w = (sample[i].weight_1) * dot(sample[i].dir_, orienting_normal);
 						if (w > kINF || w < -kINF || w <= 0.0f) {
 							continue;
 						}
 			
 						Color col = ibl_->sample(sample[i].dir_);
-						incoming_radiance = incoming_radiance + ibl_->sample(sample[i].dir_) * w / (float)sample.size();
+						incoming_radiance = incoming_radiance + ibl_->sample(sample[i].dir_) * w * sample_sz_1;
 					}
 				}
 				weight = hitpoint.color_;
@@ -212,7 +276,7 @@ public:
 		case MT_Mirror:
 			{
 				Intersection next_intersection;
-				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * 2.0 * dot(hitpoint.normal_, ray.dir_));
+				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * (hpn_rdir + hpn_rdir));
 				incoming_radiance = radiance_direct_light_env(reflection_ray, rnd, usamples, vsamples, *intersection, &next_intersection, depth + 1);
 				weight = hitpoint.color_;
 			}
@@ -220,22 +284,63 @@ public:
 		case MT_Glossy:
 			{
 				MaterialGlossy *material = (MaterialGlossy*)intersection->objectMaterial;
-				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * 2.0 * dot(hitpoint.normal_, ray.dir_));
+				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ *(hpn_rdir + hpn_rdir));
 
 				Vec w, u, v;
 				Vec dir;
 				w = reflection_ray.dir_;
+				//radiance_direct_light_env
+				/*
 				if (fabs(w.x_) > kEPS)
 					u = normalize(cross(Vec(0.0, 1.0, 0.0), w));
 				else
 					u = normalize(cross(Vec(1.0, 0.0, 0.0), w));
+				
 				v = cross(w, u);
+				*/
+				
+				if (fabs(w.x_) > kEPS)
+				{
+					const float nx = 1.0f / sqrt(w.z_*w.z_ + w.x_*w.x_);
+					u = Vec(w.z_*nx, 0.0, w.x_*nx);
+					v = Vec(w.y_*u.z_, w.z_*u.x_ - w.x_*u.z_,-w.y_*u.x_);
+				}
+				else
+				{
+					const float nx = 1.0f / sqrt(w.z_*w.z_ + w.y_*w.y_);
+					u = Vec(0.0, -w.z_*nx, w.y_*nx);
+					v = Vec(w.y_*u.z_ - w.z_*u.y_, -w.x_*u.z_,-w.y_*u.x_);
+				}
+				
+			/*	
+        Vec3f tmpZ = mZ = Normalize(z);
+		if(std::abs(tmpZ.x) > 0.99f)
+		{
+			//u = normalize(cross(Vec(0.0, 1.0, 0.0), w));
+			const float nx = rsqrt(mZ.z*mZ.z + mZ.x*mZ.x);
+			
+			mY = Vec3f(mZ.z*nx, 0, -mZ.x*nx); //u
+			
+			mX = Vec3f(mZ.y*mY.z, mZ.z*mY.x - mZ.x*mY.z, -mZ.y*mY.x); //v
+		}
+		else
+		{
+			//u = normalize(cross(Vec(1.0, 0.0, 0.0), w));
+			//6* 3* 3* 1sqrt 1/  = 12* 
+			const float nx = rsqrt(mZ.z*mZ.z + mZ.y*mZ.y);
+			
+			mY = Vec3f(0, -mZ.z*nx, mZ.y*nx); //4* 1sqrt 1/  => -8*
+			mX = Vec3f(mZ.y*mY.z - mZ.z*mY.y, -mZ.x*mY.z, mZ.x*mY.y);
+		}
+				*/
 				for (int i = 0; i < usamples * vsamples; ++i) {
 					do {
-						const float r1 = 2 * kPI * rnd->next01();
-						const float r2 = -material->lobe_ * 2.0f * rnd->next01() + 1.0f;
+						const float r1 = kPI2 * rnd->next01();
+						const float r2 = (- material->lobe_ - material->lobe_) * rnd->next01() + 1.0f;
 						const float r2s = sqrt(1.0 - r2 * r2);
-						dir = normalize((
+						dir = 
+							//normalize
+							((
 							u * cos(r1) * r2s +
 							v * sin(r1) * r2s +
 							w * r2));
@@ -257,7 +362,7 @@ public:
 				MaterialGlass *material = (MaterialGlass*)intersection->objectMaterial;
 				weight = material->surface_color_;
 
-				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * 2.0 * dot(hitpoint.normal_, ray.dir_));
+				const Ray reflection_ray = Ray(hitpoint.position_, ray.dir_ - hitpoint.normal_ * (hpn_rdir + hpn_rdir));
 				const bool into = dot(hitpoint.normal_, orienting_normal) > 0.0; // レイがオブジェクトから出るのか、入るのか
 
 				// Snellの法則
@@ -274,16 +379,23 @@ public:
 				}
 				// 屈折の方向
 				const Ray refraction_ray = Ray(hitpoint.position_,
-					normalize(ray.dir_ * nnt - hitpoint.normal_ * (into ? 1.0f : -1.0f) * (ddn * nnt + sqrt(cos2t))));
+					//normalize
+					(ray.dir_ * nnt - hitpoint.normal_ * (into ? 1.0f : -1.0f) * (ddn * nnt + sqrt(cos2t))));
 
 				// SchlickによるFresnelの反射係数の近似を使う
 				const float a = nt - nc, b = nt + nc;
 				const float R0 = (a * a) / (b * b);
 
-				const float c = 1.0f - (into ? -ddn : dot(refraction_ray.dir_, -1.0f * orienting_normal));
-				const float Re = R0 + (1.0f - R0) * pow(c, 5.0f); // 反射方向の光が反射してray.dirの方向に運ぶ割合。同時に屈折方向の光が反射する方向に運ぶ割合。
-				const float nnt2 = pow(into ? nc / nt : nt / nc, 2.0f); // レイの運ぶ放射輝度は屈折率の異なる物体間を移動するとき、屈折率の比の二乗の分だけ変化する。
-				const float Tr = (1.0f - Re) * nnt2; // 屈折方向の光が屈折してray.dirの方向に運ぶ割合
+				const float c = 1.0f - (into ? -ddn : -dot(refraction_ray.dir_,  orienting_normal));
+				const float cc = c*c;
+
+				//const float Re = R0 + (1.0f - R0) * pow(c, 5.0f); // 反射方向の光が反射してray.dirの方向に運ぶ割合。同時に屈折方向の光が反射する方向に運ぶ割合。
+				const float Re = R0 + (1.0f - R0) * cc*cc*c; // 反射方向の光が反射してray.dirの方向に運ぶ割合。同時に屈折方向の光が反射する方向に運ぶ割合。
+				//const float nnt2 = pow(into ? nc / nt : nt / nc, 2.0f); // レイの運ぶ放射輝度は屈折率の異なる物体間を移動するとき、屈折率の比の二乗の分だけ変化する。
+				//const float Tr = (1.0f - Re) * nnt2; // 屈折方向の光が屈折してray.dirの方向に運ぶ割合
+
+				//const float nnt2 = nnt*nnt; // レイの運ぶ放射輝度は屈折率の異なる物体間を移動するとき、屈折率の比の二乗の分だけ変化する。
+				const float Tr = (1.0f - Re) * nnt * nnt; // 屈折方向の光が屈折してray.dirの方向に運ぶ割合
 			
 				Intersection next_intersection0, next_intersection1;
 				incoming_radiance = 

@@ -22,6 +22,8 @@ public:
 			std::string value;
 			ifs >> key >> value;
 
+			//std::cout << key << "=" << value << std::endl;
+
 			value_table_.insert(std::make_pair(key, value));
 		}
 	}

@@ -1,0 +1,1 @@
+g++ -mwindows -DWIN32  -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -o '../../bin/akari' main.cpp -O3 -march=native -funroll-loops -mfpmath=sse -msse2 -msse3 -mssse3 -ffast-math  -fwhole-program -Wno-format-y2k  -fno-exceptions -fno-strict-aliasing -s -fopenmp -std=c++0x -mconsole -L/usr/local/lib -lole32 -luuid -lcomctl32 -static-libgcc -static-libstdc++ -enable-auto-import

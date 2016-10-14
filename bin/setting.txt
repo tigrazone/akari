@@ -32,7 +32,7 @@ lens_param_a 0.95
 lens_param_b 1.5
 lens_radius 5.0
 focal_distance 240.0
-blur_depth_threashold 32.0
+blur_depth_threashold 3200000000.0
 blur_total_samples_coeff 256.0
 blur_max_radius 4
 fstop 1.4
@@ -46,4 +46,4 @@ tone_curve_output_r 195
 tone_curve_output_g 194
 tone_curve_output_b 128
 
-output_interval 60.0
+output_interval 55.0

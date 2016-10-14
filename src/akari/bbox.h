@@ -70,7 +70,8 @@ public:
 		else
 			return AxisZ;
 	}
-
+	
+//tigra: need to speedup
 	bool check_intersect(const Ray &ray, float *hitt0, float *hitt1) {
 		float t0 = 0.0, t1 = kINF;
 		for (int i = 0; i < 3; ++i) {
@@ -90,6 +91,110 @@ public:
 		return true;
 	}
 };
+
+/*
+//pp можно vec* чтоб не копировать значение min, max
+//vec *pp[2];
+//pp[0]=&min;
+//pp[1]=&max;
+
+//pp[0]->x
+
+class aabb
+{
+    public:
+        aabb() {}
+        aabb(const vec3& a, const vec3& b) { pp[0] = a; pp[1] = b; }
+		
+        vec3 min() const { return pp[0]; }
+        vec3 max() const { return pp[1]; }
+        vec3 pp[2];
+};
+
+
+inline bool aabb::hit14(const ray& r, float tmin, float tmax) const {	
+int posneg[6];	
+		
+		if(r.direction()[0]<0.f)
+		{
+			if(r.origin()[0]<min()[0])
+				return false;
+			posneg[0]= 1;
+			posneg[1]= 0;
+		}
+		else
+		{
+			if(r.origin()[0]>max()[0])
+				return false;
+			posneg[0]= 0;
+			posneg[1]= 1;
+		}			
+		
+	const float rd0 = 1.f / r.direction()[0];
+		
+    float t0 = (pp[posneg[0]].x() - r.o.x() ) * rd0 ;
+    float t1 = (pp[posneg[1]].x() - r.o.x() ) * rd0 ;	
+
+    float interval_min = tmin;
+    float interval_max = tmax;
+	
+    if (t0 > interval_min) interval_min = t0;
+    if (t1 < interval_max) interval_max = t1;
+    if (interval_min > interval_max) return false;
+	
+	
+		
+		if(r.direction()[1]<0.f)
+		{
+			if(r.origin()[1]<min()[1])
+				return false;
+			posneg[2]= 1;
+			posneg[3]= 0;
+		}
+		else
+		{
+			if(r.origin()[1]>max()[1])
+				return false;
+			posneg[2]= 0;
+			posneg[3]= 1;
+		}
+	
+	
+	const float rd1 = 1.f / r.direction()[1];
+		
+    t0 = (pp[posneg[2]].y() - r.o.y() ) * rd1 ;
+    t1 = (pp[posneg[3]].y() - r.o.y() ) * rd1 ;	
+	
+    if (t0 > interval_min) interval_min = t0;
+    if (t1 < interval_max) interval_max = t1;
+    if (interval_min > interval_max) return false;
+	
+		
+		if(r.direction()[2]<0.f)
+		{
+			if(r.origin()[2]<min()[2])
+				return false;
+			posneg[4]= 1;
+			posneg[5]= 0;
+		}
+		else
+		{
+			if(r.origin()[2]>max()[2])
+				return false;
+			posneg[4]= 0;
+			posneg[5]= 1;
+		}
+	
+	const float rd2 = 1.f / r.direction()[2];
+		
+    t0 = (pp[posneg[4]].z() - r.o.z() ) * rd2 ;
+    t1 = (pp[posneg[5]].z() - r.o.z() ) * rd2 ;
+
+    if (t0 > interval_min) interval_min = t0;
+    if (t1 < interval_max) interval_max = t1;
+    return (interval_min <= interval_max);
+}
+*/
 
 
 inline BBox Union(const BBox &b, const Vec &p) {

@@ -14,9 +14,12 @@ private:
 	HDRImage hdr_;
 
 	std::vector<float> luminance_;
+	
+	//not used
 	std::vector<float> normal_;
 
-	std::vector<Color> importance_map_;
+	//not used
+	//std::vector<Color> importance_map_;
 
 	std::vector<Vec> direction_table_;
 
@@ -24,6 +27,7 @@ private:
 
 public:
 	int width_, height_;
+	float width_1;
 
 	inline float luminance(const Color &color) {
 		return 0.298912f * color.x_ + 0.586611f * color.y_ + 0.114478f * color.z_;
@@ -34,6 +38,9 @@ public:
 		hdr_.load_unsafe(filename);
 		width_ = hdr_.width();
 		height_ = hdr_.height();
+		
+		width_1 = width_ / (kPI2);
+		
 //		importance_map_size_ = importance_map_size;
 		
 		if (importance) {
@@ -47,10 +54,12 @@ public:
 					const float u = (ix + 0.5f) / width_;
 					const float v = 1.0f - (iy + 0.5f) / height_;
 					
-					const float phi = u * 2.0f * kPI;
-					const float y = v * 2.0f - 1.0f;
+					const float phi = u * kPI2;
+					const float y = v +v - 1.0f;
+					
+					const float yy = sqrt(1.0f - y*y);
 
-					const Vec vec(sqrt(1.0f - y*y) * cos(phi), y, sqrt(1.0f - y*y) * sin(phi));
+					const Vec vec(yy * cos(phi), y, yy * sin(phi));
 
 					warped[iy * width_ + ix] = sample(vec);
 				}
@@ -89,10 +98,10 @@ public:
 	
 	// DebevecのオリジナルHDR
 	inline Color sample_sphere(const Vec &dir) {
-		const float r = (1.0f / kPI) * acos(dir.z_) / sqrt(dir.x_ * dir.x_ + dir.y_ * dir.y_);
+		const float r = (kPI_1) * acos(dir.z_) / sqrt(dir.x_ * dir.x_ + dir.y_ * dir.y_);
 
-		float u = (dir.x_ * r + 1.0f) / 2.0f;
-		float v = 1.0f - (dir.y_ * r + 1.0f) / 2.0f;
+		float u = (dir.x_ * r + 1.0f) * 0.5f;
+		float v = 1.0f - (dir.y_ * r + 1.0f) * 0.5f;
 		
 		if (u < 0.0f)
 			u += 1.0f;
@@ -112,13 +121,15 @@ public:
 	inline Color sample(const Vec &dir) {
 		const float theta = acos(dir.y_);
 		float phi = acos(dir.x_ / sqrt(dir.x_ * dir.x_ + dir.z_ * dir.z_));
+		
 		if (dir.z_ < 0.0f)
-			phi = 2.0f * kPI - phi;
+			phi = kPI + kPI - phi;
 
-		const float u = phi / (2.0f * kPI);
-		const float v = 1.0f - theta / kPI;
+		//const float u = phi / (2.0f * kPI);
+		const float v = 1.0f - theta * kPI_1;
 
-		const int x = (int)(u * width_) % width_;
+		//const int x = (int)(u * width_) % width_;
+		const int x = (int)(phi * width_1) % width_;
 		const int y = (int)(v * height_) % height_;
 
 		return *hdr_.image_ptr(x, y);
@@ -126,6 +137,7 @@ public:
 	struct Sample {
 		Vec dir_;
 		float weight_;
+		float weight_1;
 	};
 	
 
@@ -135,13 +147,20 @@ public:
 			float probability_;
 		};
 
-		Bin bin[importance_map_size_ * importance_map_size_];
+		const long ims2 = importance_map_size_ * importance_map_size_;
+
+		const float ims_1 = 1.0 / importance_map_size_;
+
+		float is1;
+		float ttl1;
+
+		Bin bin[ims2];
 		// std::vector<Bin> bin(importance_map_size_ * importance_map_size_);
 
 		int num_bin = 0;
 		// bin.reserve(importance_map_size_ * importance_map_size_);
 		float total = 0.0f;
-		for (int i = 0; i < importance_map_size_* importance_map_size_; ++i) {
+		for (int i = 0; i < ims2; ++i) {
 			const float lumi = luminance_[i] * std::max(dot(normal, direction_table_[i]), 0.0f);
 			if (lumi > 0.0f) {
 				bin[num_bin].index_ = i;
@@ -151,8 +170,11 @@ public:
 			}
 		}
 		
+
+		ttl1 = 1.0f / total;
+
 		for (int i = 0; i < num_bin; ++i) {
-			bin[i].probability_ = bin[i].probability_ / total;
+			bin[i].probability_ = bin[i].probability_ * ttl1;
 			const float samples = usamples * vsamples * bin[i].probability_;
 
 			int int_samples = (int)samples;
@@ -162,6 +184,8 @@ public:
 			
 			const int ix = bin[i].index_ % importance_map_size_;
 			const int iy = bin[i].index_ / importance_map_size_;
+
+			is1 = 1.0f / int_samples;
 
 			// QMC
 			// hammersley
@@ -173,20 +197,31 @@ public:
 					if (kk & 1) // kk mod 2 == 1
 						qu += p;
 
-				qv = (k + 0.5f) / int_samples;
+				qv = (k + 0.5f) ;
 				
-				const float u = (ix + qu) / importance_map_size_;
-				const float v = (iy + qv) / importance_map_size_;
+				const float u = (ix + qu) * ims_1;
+				const float v = (iy + qv) * ims_1;
 				
-				const float phi = u * 2.0f * kPI;
-				const float t = 2.0f* v - 1.0f;
-				const float theta = sqrt(1.0f - t * t) * kPI;
+				const float phi = u * kPI2;
+				const float t = v + v - 1.0f;
+
+				const float sqqq = sqrt(1.0f - t * t);
+
+					//const float theta = sqqq * kPI;
 			
-				const Vec vec(sqrt(1.0f - t * t) * cos(phi), t, sqrt(1.0f - t * t) * sin(phi));
+				const Vec vec(sqqq * cos(phi), t, sqqq * sin(phi));
 
 				Sample s;
 				s.dir_ = vec;
+				
+				/*
 				s.weight_ = bin[i].probability_ * (importance_map_size_ * importance_map_size_ / (4.0f * kPI));
+				s.weight_1 = 1.0 / (s.weight_ * kPI);
+				*/
+				
+				s.weight_ = bin[i].probability_ * (ims2);
+				s.weight_1 = 4.0f / s.weight_;
+				
 				vecs.push_back(s);
 
 				pos ++;

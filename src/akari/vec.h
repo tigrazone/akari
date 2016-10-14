@@ -18,7 +18,8 @@ struct Vec {
 		return Vec(x_ * b, y_ * b, z_ * b);
 	}
 	inline Vec operator/(const float b) const {
-		return Vec(x_ / b, y_ / b, z_ / b);
+		const float bb = 1.0f / b;
+		return Vec(x_ *bb, y_ *bb, z_ *bb);
 	}
 	inline const float length_squared() const { 
 		return x_*x_ + y_*y_ + z_*z_; 
@@ -67,6 +68,9 @@ inline const Vec cross(const Vec &v1, const Vec &v2) {
 void put(const Vec &v) {
 	std::cout << "<" << v.x_ << "," << v.y_ << "," << v.z_ <<  ">";
 }
+#if defined(__GNUC__)
+#define _isnan std::isnan
+#endif
 
 bool valid(const Vec &v) {
 	return (-kINF < v.x_ && v.x_ < kINF && !_isnan(v.x_)) &&

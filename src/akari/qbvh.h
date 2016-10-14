@@ -18,10 +18,23 @@
 */
 
 #include <xmmintrin.h>
+#include "sse.hxx"
 
 #include "vec.h"
 #include "bbox.h"
 #include "triangle.h"
+
+
+		MM_ALIGN32 static const float one_f[4] = {1.0f, 1.0f, 1.0f, 1.0f};
+		MM_ALIGN32 static const float inf_f[4] = {kINF, kINF, kINF, kINF};
+		MM_ALIGN32 static const float zero_f[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+		MM_ALIGN32 static const float keps_f[4] = {kEPS, kEPS, kEPS, kEPS};			
+
+		__m128 zero_ = _mm_load_ps(zero_f);
+		__m128 one_ = _mm_load_ps(one_f);
+		__m128 inf_ = _mm_load_ps(inf_f);
+		__m128 keps_ = _mm_load_ps(keps_f);
+
 
 static const int QOrderTable[] = {
 	0x44444,0x44444,0x44444,0x44444,0x44444,0x44444,0x44444,0x44444,
@@ -41,6 +54,40 @@ static const int QOrderTable[] = {
 	0x44123,0x44132,0x44123,0x44132,0x44231,0x44321,0x44231,0x44321,
 	0x40123,0x40132,0x41023,0x41032,0x42301,0x43201,0x42310,0x43210,
 };
+
+
+	
+	void * _aligned_malloc(size_t size, int align) {
+    /* alignment could not be less then zero */
+    if (align < 0) {
+        return NULL;
+    }
+     
+    /* Allocate necessary memory area
+     * client request - size parameter -
+     * plus area to store the address
+     * of the memory returned by standard
+     * malloc().
+     */
+    void *ptr;
+    void *p = malloc(size + align - 1 + sizeof(void*));
+     
+    if (p != NULL) {
+        /* Address of the aligned memory according to the align parameter*/
+        ptr = (void*) (((unsigned int)p + sizeof(void*) + align -1) & ~(align-1));
+        /* store the address of the malloc() above
+         * at the beginning of our total memory area.
+         * You can also use *((void **)ptr-1) = p
+         * instead of the one below.
+         */
+        *((void**)((unsigned int)ptr - sizeof(void*))) = p;
+        /* Return the address of aligned memory */
+        return ptr; 
+    }
+    return NULL;
+}
+
+
 
 template <class Triangle>
 class QBVHSSE {
@@ -137,7 +184,7 @@ private:
 			} leaf_;
 
 			unsigned int raw_;
-		};
+		} tuzik;
 	};
 
 	struct SIMDBVHNode{
@@ -157,24 +204,12 @@ public:
 	
 	int stats[16];
 
-	__m128 zero_;
-	__m128 one_;
-	__m128 inf_;
-	__m128 keps_;
-
 	QBVHSSE() {
 		for (int i = 0; i < 16; ++i)
 			stats[i] = 0;
-		std::cout << sizeof(SIMDTrianglePack) << std::endl;
-		__declspec(align(16)) float one_f[4] = {1.0f, 1.0f, 1.0f, 1.0f};
-		__declspec(align(16)) float inf_f[4] = {kINF, kINF, kINF, kINF};
-		__declspec(align(16)) float zero_f[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-		__declspec(align(16)) float keps_f[4] = {kEPS, kEPS, kEPS, kEPS};
 		
-		zero_ = _mm_load_ps(zero_f);
-		one_ = _mm_load_ps(one_f);
-		inf_ = _mm_load_ps(inf_f);
-		keps_ = _mm_load_ps(keps_f);
+		//std::cout << sizeof(SIMDTrianglePack) << std::endl;
+		
 	};
 
 	BVHBuildNode* recursiveBuild(std::vector<BVHPrimitiveInfo> &buildData, int start, int end, int *totalNodes, std::vector<Triangle*> &orderedPrims) {
@@ -337,18 +372,18 @@ public:
 
 		for (int i = 0; i < 4; ++i) {
 			if (c[i] == NULL) {
-				n->children[i].leaf_.flag_ = 1;
-				n->children[i].leaf_.nPrimitives_ = 0;
-				n->children[i].leaf_.index_ = 0;
+				n->children[i].tuzik.leaf_.flag_ = 1;
+				n->children[i].tuzik.leaf_.nPrimitives_ = 0;
+				n->children[i].tuzik.leaf_.index_ = 0;
 			} else {
 				if (c[i]->nPrimitives_ == 0) {
-					n->children[i].node_.flag_ = 0;
-					n->children[i].node_.index_= simdNodes_.size();
+					n->children[i].tuzik.node_.flag_ = 0;
+					n->children[i].tuzik.node_.index_= simdNodes_.size();
 					collapse2QBVH(c[i]);
 				} else {
-					n->children[i].leaf_.flag_ = 1;
-					n->children[i].leaf_.nPrimitives_ = c[i]->nPrimitives_;
-					n->children[i].leaf_.index_ = c[i]->simdTrisIdx_;
+					n->children[i].tuzik.leaf_.flag_ = 1;
+					n->children[i].tuzik.leaf_.nPrimitives_ = c[i]->nPrimitives_;
+					n->children[i].tuzik.leaf_.index_ = c[i]->simdTrisIdx_;
 				}
 			}
 		}
@@ -425,19 +460,17 @@ public:
 		__m128 sseOrg[3];
 		__m128 sseiDir[3];
 		int sign[3];
-		Vec idir(1.0f / ray.dir_.x_, 1.0f / ray.dir_.y_, 1.0f / ray.dir_.z_);
-		__declspec(align(16)) float r_idir_x[4] = {idir.x_, idir.x_, idir.x_, idir.x_};
-		__declspec(align(16)) float r_idir_y[4] = {idir.y_, idir.y_, idir.y_, idir.y_};
-		__declspec(align(16)) float r_idir_z[4] = {idir.z_, idir.z_, idir.z_, idir.z_};
-					
-		__declspec(align(16)) float r_org_x[4] = {ray.org_.x_, ray.org_.x_, ray.org_.x_, ray.org_.x_};
-		__declspec(align(16)) float r_org_y[4] = {ray.org_.y_, ray.org_.y_, ray.org_.y_, ray.org_.y_};
-		__declspec(align(16)) float r_org_z[4] = {ray.org_.z_, ray.org_.z_, ray.org_.z_, ray.org_.z_};
 
-		__declspec(align(16)) float r_dir_x[4] = {ray.dir_.x_, ray.dir_.x_, ray.dir_.x_, ray.dir_.x_};
-		__declspec(align(16)) float r_dir_y[4] = {ray.dir_.y_, ray.dir_.y_, ray.dir_.y_, ray.dir_.y_};
-		__declspec(align(16)) float r_dir_z[4] = {ray.dir_.z_, ray.dir_.z_, ray.dir_.z_, ray.dir_.z_};
-					
+		bool calc = false;
+
+		__declspec(align(16)) float r_org_x[4] = { ray.org_.x_, ray.org_.x_, ray.org_.x_, ray.org_.x_ };
+		__declspec(align(16)) float r_org_y[4] = { ray.org_.y_, ray.org_.y_, ray.org_.y_, ray.org_.y_ };
+		__declspec(align(16)) float r_org_z[4] = { ray.org_.z_, ray.org_.z_, ray.org_.z_, ray.org_.z_ };
+
+		__declspec(align(16)) float r_dir_x[4] = { ray.dir_.x_, ray.dir_.x_, ray.dir_.x_, ray.dir_.x_ };
+		__declspec(align(16)) float r_dir_y[4] = { ray.dir_.y_, ray.dir_.y_, ray.dir_.y_, ray.dir_.y_ };
+		__declspec(align(16)) float r_dir_z[4] = { ray.dir_.z_, ray.dir_.z_, ray.dir_.z_, ray.dir_.z_ };
+
 		__m128 dir_x = _mm_load_ps(r_dir_x);
 		__m128 dir_y = _mm_load_ps(r_dir_y);
 		__m128 dir_z = _mm_load_ps(r_dir_z);
@@ -446,20 +479,12 @@ public:
 		sseOrg[1] = _mm_load_ps(r_org_y);
 		sseOrg[2] = _mm_load_ps(r_org_z);
 
-		sseiDir[0] = _mm_load_ps(r_idir_x);
-		sseiDir[1] = _mm_load_ps(r_idir_y);
-		sseiDir[2] = _mm_load_ps(r_idir_z);
-		
-		sign[0] = idir[0] < 0;
-		sign[1] = idir[1] < 0;
-		sign[2] = idir[2] < 0;
-
 		const SIMDBVHNode* nodes = simdNodes_[0];
 
 		Children nodeStack[40];
 		int todoNode = 0;
 
-		nodeStack[0].raw_ = 0;
+		nodeStack[0].tuzik.raw_ = 0;
 
 		bool hit = false;
 		int triangle_index = -1;
@@ -472,16 +497,35 @@ public:
 			Children item = nodeStack[todoNode];
 			todoNode--;//pop stack
 
-			if(item.node_.flag_ == 0){
-				const SIMDBVHNode& node = *(simdNodes_[item.node_.index_]);
-				__declspec(align(16)) float now_distance_f[4] = {hitpoint->distance_, hitpoint->distance_, hitpoint->distance_, hitpoint->distance_};
+			if (item.tuzik.node_.flag_ == 0){
+				const SIMDBVHNode& node = *(simdNodes_[item.tuzik.node_.index_]);
+				__declspec(align(16)) float now_distance_f[4] = { hitpoint->distance_, hitpoint->distance_, hitpoint->distance_, hitpoint->distance_ };
 				__m128 now_distance = _mm_load_ps(now_distance_f);
+
+				if (!calc)
+				{
+				Vec idir(1.0f / ray.dir_.x_, 1.0f / ray.dir_.y_, 1.0f / ray.dir_.z_);
+				__declspec(align(16)) float r_idir_x[4] = { idir.x_, idir.x_, idir.x_, idir.x_ };
+				__declspec(align(16)) float r_idir_y[4] = { idir.y_, idir.y_, idir.y_, idir.y_ };
+				__declspec(align(16)) float r_idir_z[4] = { idir.z_, idir.z_, idir.z_, idir.z_ };
+
+				sseiDir[0] = _mm_load_ps(r_idir_x);
+				sseiDir[1] = _mm_load_ps(r_idir_y);
+				sseiDir[2] = _mm_load_ps(r_idir_z);
+
+				sign[0] = idir[0] < 0;
+				sign[1] = idir[1] < 0;
+				sign[2] = idir[2] < 0;
+
+				calc = true;
+				}
+
 				const int HitMask = test_AABB(node.bboxes, sseOrg, sseiDir, sign, zero_, now_distance);
 
 				if (HitMask) {
 					const int nodeIdx = (sign[node.axis_top] << 2) | (sign[node.axis_left] << 1) | (sign[node.axis_right]);
 					int bboxOrder = QOrderTable[HitMask * 8 + nodeIdx];
-					
+
 
 					for (int i = 0; i < 4; ++i) {
 						if (bboxOrder & 0x4)
@@ -492,11 +536,12 @@ public:
 					}
 				}
 
-			} else {
+			}
+			else {
 				__declspec(align(16)) float t_f[4];
 				__declspec(align(16)) float hit_b1[4], hit_b2[4];
 				int nohitmask;
-				SIMDTrianglePack *s = simdTris_[item.leaf_.index_];
+				SIMDTrianglePack *s = simdTris_[item.tuzik.leaf_.index_];
 
 				__m128 e1_x = _mm_sub_ps(s->x_[1], s->x_[0]);
 				__m128 e1_y = _mm_sub_ps(s->y_[1], s->y_[0]);
@@ -558,6 +603,9 @@ public:
 			hitpoint->position_ = ray.org_+ hitpoint->distance_ * ray.dir_;
 			hitpoint->triangleID = triangle_index;
 
+			const float rb1_1 = 1.0f / (1 - rb1);
+			
+			/*
 			if (using_interpolated_normal) {
 				hitpoint->normal_ = normalize(rb2 / (1 - rb1) * ((1 - rb1) * t->v_[2]->normal_ + rb1 * t->v_[1]->normal_) + 
 					(1 - rb1 - rb2) / (1 - rb1) * ((1 - rb1) * t->v_[0]->normal_ + rb1 * t->v_[1]->normal_)) ;
@@ -566,6 +614,24 @@ public:
 			}
 			hitpoint->color_ = rb2 / (1 - rb1) * ((1 - rb1) * t->v_[2]->color_ + rb1 * t->v_[1]->color_) + 
 				(1 - rb1 - rb2) / (1 - rb1) * ((1 - rb1) * t->v_[0]->color_ + rb1 * t->v_[1]->color_) ;
+			*/
+	
+			if (using_interpolated_normal) {
+				hitpoint->normal_ = 
+				//normalize
+				(rb2 * rb1_1 * ((1 - rb1) * t->v_[2]->normal_ + rb1 * t->v_[1]->normal_) + 
+					(1 - rb1 - rb2) * rb1_1 * ((1 - rb1) * t->v_[0]->normal_ + rb1 * t->v_[1]->normal_)) ;
+			} else {
+				hitpoint->normal_   = 
+				normalize
+				(cross((*t->p_[2]) - (*t->p_[0]), (*t->p_[1]) - (*t->p_[0])));
+			}
+			
+			hitpoint->color_ = rb1 * t->v_[1]->color_;
+			
+			hitpoint->color_ = rb2 *rb1_1 * ((1 - rb1) * t->v_[2]->color_ + hitpoint->color_) + 
+				(1 - rb1 - rb2) * rb1_1 * ((1 - rb1) * t->v_[0]->color_ + hitpoint->color_) ;
+		
 		}
 
 		return hit;
