@@ -4,6 +4,12 @@ akari
 THIS IS MinGW PORT OF akari
 by tigrazone@gmail.com
 
+
+1. start MinGW msys.bat
+2. start compile1.bat
+3. akari.exe compiled and saved to bin folder
+
+
 "akari" is a pysically based rendering solution based on path tracing.  
 In Japanese, the word "akari" means "a light source" or one of the cutest girl in Manga.
 
