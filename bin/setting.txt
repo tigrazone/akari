@@ -5,14 +5,14 @@ depth_max_ 32
 
 num_threads 8
 
-width 1280
-height 720
+width 800
+height 450
 display_gamma 2.0
 
-direct_light_samples    8
-indirect_light_samples  8
+direct_light_samples    4
+indirect_light_samples  4
 
-iteration_num 300
+iteration_num 5
 sample_per_pixel_per_iteration 4
 
 camera_position_x 50

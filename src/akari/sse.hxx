@@ -12,6 +12,7 @@
 #else
 #error Unsupported compiler!
 #endif
+
 #define STACK_ALIGN16(t)       reinterpret_cast<float *>((reinterpret_cast<size_t>(t)+0x0F) & ~(size_t) 0x0F)
 #define STACK_ALIGN32(t)       reinterpret_cast<float *>((reinterpret_cast<size_t>(t)+0x1F) & ~(size_t) 0x1F)
 #define STACK_ALIGN64(t)       reinterpret_cast<float *>((reinterpret_cast<size_t>(t)+0x3F) & ~(size_t) 0x3F)

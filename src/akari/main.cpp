@@ -332,8 +332,9 @@ void blur(std::vector<T> &arr, const std::vector<float> &depth_arr, const int wi
 }
 
 int main() {
-	clock_t beginTime = clock(); 
-	clock_t beginTime0 = clock();
+
+
+	clock_t beginTime000 = clock();
 
 	clock_t endTime1;
 	float now1;
@@ -417,6 +418,15 @@ int main() {
 	height0	= height;
 
 	int count = 0;
+	
+	clock_t beginTime = clock(); 
+
+
+	float ttt = (float)(beginTime - beginTime000) / (float)CLOCKS_PER_SEC;
+	
+	printf("pre-render time %.2fs\n", ttt);
+
+	clock_t beginTime0 = clock();
 
 	//timeBeginPeriod(1);
 	{
@@ -546,8 +556,13 @@ int main() {
 					
 					// 最終結果をぼかす
 					//std::cout << "blur rendered image" << std::endl;
-				#pragma omp parallel for schedule(dynamic, 1)
 					for (int y = 0; y < height; y ++) {
+				// #pragma omp parallel for schedule(dynamic)
+				
+				// #pragma omp parallel for shared(depth_arr,y,result_hdr,tmp_hdr)
+				
+				
+				#pragma omp parallel for schedule(dynamic, 1)
 						for (int x = 0; x < width; x ++) {
 							const float depth = depth_arr[y * width + x];
 							
@@ -590,7 +605,7 @@ int main() {
 							}
 						}
 					}
-
+//#pragma omp critical
 					// LDR化
 					to_ldr(&result_hdr, fstop);
 
@@ -603,7 +618,7 @@ int main() {
 					vignetting(&result_hdr, height * vignetting_value);
 			
 					char str[256];
-					
+								
 					sprintf(str, "result_%03d__%03d.hdr", iteration, count);
 					result_hdr.save(str);
 					
@@ -783,10 +798,61 @@ int main() {
 			sprintf(str, "sample_map_%03d__%03d.hdr", iteration, count);
 			flo2hdr(str, sample_mapf);
 			
+			
+					// LDR化
+					to_ldr(&result_hdr, fstop);
+
+					// トーンカーブ調整
+					tone_curve(&result_hdr, 
+						Color((float)tone_curve_input_r, (float)tone_curve_input_g, (float)tone_curve_input_b) / 255.0f, 
+						Color((float)tone_curve_output_r, (float)tone_curve_output_g, (float)tone_curve_output_b) / 255.0f);
+
+					// 周辺光量
+					vignetting(&result_hdr, height * vignetting_value);
+			
+								
+					sprintf(str, "result_%03d__%03d.hdr", iteration, count);
+					result_hdr.save(str);
+					
+					sprintf(str, "tmp_hdr_%03d__%03d.hdr", iteration, count);
+					tmp_hdr.save(str);
+					
+					sprintf(str, "hdr_%03d__%03d.hdr", iteration, count);
+					hdr.save(str);
+					
+
+					// bmpに出力
+					for (int iy = 0; iy < height; ++iy) {
+						for (int ix = 0; ix < width; ++ix) {
+							const unsigned char r = to_bmp_value(result_hdr.image_ptr(ix, height - iy - 1)->x_, display_gamma);
+							const unsigned char g = to_bmp_value(result_hdr.image_ptr(ix, height - iy - 1)->y_, display_gamma);
+							const unsigned char b = to_bmp_value(result_hdr.image_ptr(ix, height - iy - 1)->z_, display_gamma);
+							bmp_arr[(iy * width + ix) * 3 + 0] = b;
+							bmp_arr[(iy * width + ix) * 3 + 1] = g;
+							bmp_arr[(iy * width + ix) * 3 + 2] = r;
+
+//							printf("%f %d\n", result_hdr.image_ptr(ix, height - iy - 1)->x_, r);
+						}
+					}
+					sprintf(str, "%03d__%03d.bmp", iteration, count);
+					exportToBmp(str, &bmp_arr[0], width, height);
+			
+			
+					endTime1 = clock();
+					now1 = (float)(endTime1 - beginTime0) / (float)CLOCKS_PER_SEC;
+
+					printf("Iteration time %.2fsec.\n", now1);
+			
 		}
 	}
 
 	//timeEndPeriod(1);
+	
+	
+					endTime1 = clock();
+					now1 = (float)(endTime1 - beginTime000) / (float)CLOCKS_PER_SEC;
+
+					printf("all time %.2fsec.\n", now1);
 
 	return 0;
 }

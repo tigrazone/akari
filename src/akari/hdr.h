@@ -75,8 +75,16 @@ public:
 
 	void load_unsafe(const std::string &filename) {
 		FILE *fp = fopen(filename.c_str(), "rb");
-		const int BufSize = 4096;
+				
+		const size_t BufSize = 32*1024-2;
+		char buf0[BufSize];
+		
 		char buf[BufSize];
+		
+		setvbuf(fp,buf0,_IOFBF,BufSize);
+		
+		std::cout << "hdr.load_unsafe(" <<filename <<")...";
+		
 		if (fp == NULL) {
 			std::cerr << "HDR Error: " << filename << std::endl;
 			return;
@@ -90,6 +98,8 @@ public:
 
 		type = NONE;
 		float exposure = 1.0;
+		
+		clock_t t0=clock();
 
 		// ヘッダ読み込み
 		for (;;) {
@@ -103,7 +113,10 @@ public:
 					char buf2[BufSize];
 					sscanf(buf, "FORMAT=%s", buf2);
 					if (strcmp(buf2, "32-bit_rle_rgbe") == 0)
+					{
 						type = RLE_RGBE_32;
+						printf("type = RLE_RGBE_32\n");
+					}
 
 				} else if (strstr(buf, "EXPOSURE=") == buf) {
 					sscanf(buf, "FORMAT=%f", &exposure);
@@ -113,6 +126,9 @@ public:
 			if (buf[0] == '\n')
 				break;
 		}
+		
+		if(type == NONE)			
+			printf("type = NONE\n");
 
 		if (!valid) {
 			std::cerr << "Invalid HDR File: " << filename << std::endl;
@@ -189,14 +205,31 @@ public:
 				image_[(height_ - 1 - y) * width_ + x].z_ = tmp_data[(y * width_ + x) * 4 + 2] * pow(2, e - 128.0f) / 256.0f;
 			}
 		}
+		
+		
+		clock_t t1 = clock();
+		float ttt = (float)(t1-t0)/(float)CLOCKS_PER_SEC;
+		printf("%.2fs\n",ttt);
 	}
 
 	void save(const std::string &filename) {
+		
+		printf("hdr.save %s ...", filename.c_str());
+		
+		clock_t t0 = clock();
+		
 		FILE *fp = fopen(filename.c_str(), "wb");
 		if (fp == NULL) {
 			std::cerr << "Error: " << filename << std::endl;
 			return;
 		}
+		
+		
+		const size_t BufSize = 32*1024-2;
+		char buf0[BufSize];
+		
+		setvbuf(fp,buf0,_IOFBF,BufSize);
+		
 		// .hdrフォーマットに従ってデータを書きだす
 		// ヘッダ
 		unsigned char ret = 0x0a;
@@ -208,25 +241,35 @@ public:
 		// 輝度値書き出し
 		fprintf(fp, "-Y %d +X %d%c", height_, width_, ret);
 		for (int i = height_ - 1; i >= 0; i --) {
+			
+			//переписать обычным массивом
 			std::vector<HDRPixel> line;
 			for (int j = 0; j < width_; j ++) {
 				HDRPixel p(image_[j + i * width_]);
 				line.push_back(p);
 			}
-			fprintf(fp, "%c%c", 0x02, 0x02);
-			fprintf(fp, "%c%c", (width_ >> 8) & 0xFF, width_ & 0xFF);
+			
+			fputc ((char)0x02, fp);
+			fputc ((char)0x02, fp);
+			fputc ((char)(width_ >> 8) & 0xFF, fp);
+			fputc ((char)width_ & 0xFF, fp);
+			
 			for (int i = 0; i < 4; i ++) {
 				for (int cursor = 0; cursor < width_;) {
 					const int cursor_move = std::min(127, width_ - cursor);
-					fprintf(fp, "%c", cursor_move);
+					fputc ((char)cursor_move, fp);
 					for (int j = cursor; j < cursor + cursor_move; j ++)
-						fprintf(fp, "%c", line[j].get(i));
+						fputc ((char)line[j].get(i), fp);
 					cursor += cursor_move;
 				}
 			}
 		}
 
 		fclose(fp);
+		
+		clock_t t1 = clock();
+		float ttt = (float)(t1-t0)/(float)CLOCKS_PER_SEC;
+		printf("%.2fs\n",ttt);
 	}
 };
 
