@@ -10,6 +10,9 @@ by tigrazone@gmail.com
 3. akari.exe compiled and saved to bin folder
 
 
+UPDATE added Visual c++ project in src/akari/build-vc
+
+
 "akari" is a pysically based rendering solution based on path tracing.  
 In Japanese, the word "akari" means "a light source" or one of the cutest girl in Manga.
 
